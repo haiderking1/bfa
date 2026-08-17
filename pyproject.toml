@@ -14,3 +14,10 @@ bfa = "bfa:main"
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "fonttools>=4.63.0",
+    "pillow>=12.3.0",
+    "uharfbuzz>=0.56.0",
+]
