@@ -1,0 +1,16 @@
+[project]
+name = "bfa"
+version = "0.1.0"
+description = "Native game localization pipeline for Arabic support"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=3.1.0",
+]
+
+[project.scripts]
+bfa = "bfa:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"

@@ -1,0 +1,13 @@
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local translation databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Python-generated files
+__pycache__/
+*.py[cod]
