@@ -94,7 +94,10 @@ def decompress_qcmp(data: bytes, uncompressed_size: Optional[int] = None) -> byt
                     match_len = data[pos] + 1
                     pos += 1
                 else:
-                    match_len = mode
+                    # Match length is (tag >> 5) + 1. Verified against
+                    # UILocalizationChunk resources whose uncompressed size
+                    # and qResourceData header layout are independently known.
+                    match_len = mode + 1
 
                 # Update circular history cache
                 history[hist_idx] = (match_len << 16) | (match_off & 0xFFFF)

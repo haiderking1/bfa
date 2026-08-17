@@ -84,6 +84,59 @@ class FontResourceInfo:
 
 
 @dataclass
+class LocalizationEntry:
+    """One hashed localization string from a UILocalizationChunk."""
+
+    key_hash: int
+    text: str
+    key_string: Optional[str] = None
+
+    @property
+    def key_hash_hex(self) -> str:
+        return f"0x{self.key_hash:08x}"
+
+
+@dataclass
+class LocalizationTable:
+    """Decoded Sleeping Dogs UILocalizationChunk string table."""
+
+    debug_name: str
+    name_uid: int
+    type_uid: int
+    qchunk_id: int
+    qchunk_size: int
+    qchunk_data_size: int
+    qchunk_data_offset: int
+    m_chunk_size: int
+    m_padding: int
+    qoffset: int
+    encoding: str
+    entries: List[LocalizationEntry] = field(default_factory=list)
+    string_pool_padding: bytes = b""
+    chunk_payload_padding: bytes = b""
+    tail_padding: bytes = b""
+    prefix: bytes = b""
+    source_size: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "debug_name": self.debug_name,
+            "name_uid_hex": f"0x{self.name_uid:08x}",
+            "type_uid_hex": f"0x{self.type_uid:08x}",
+            "encoding": self.encoding,
+            "entry_count": len(self.entries),
+            "entries": [
+                {
+                    "key_hash_hex": e.key_hash_hex,
+                    "text": e.text,
+                    "key_string": e.key_string,
+                }
+                for e in self.entries
+            ],
+        }
+
+
+@dataclass
 class TextResourceInfo:
     """Inspection data for text/screen BIN files."""
 
@@ -101,6 +154,9 @@ class TextResourceInfo:
     sample_strings: List[str] = field(default_factory=list)
     control_tags_detected: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
+    decoded_localization_strings: List[str] = field(default_factory=list)
+    unknown_printable_data: List[str] = field(default_factory=list)
+    is_verified_localization: bool = False
 
 
 @dataclass

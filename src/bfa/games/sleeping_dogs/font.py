@@ -54,7 +54,10 @@ def detect_font_payload_format(data: bytes) -> Tuple[bool, str, str, Dict[str, A
     if is_qcmp(data):
         return False, "QCMP Compressed Stream (PMCQ)", magic_hex, details
 
-    # United Front Games binary screen/font container (e.g. 28 d6 d6 cd ...)
+    if len(data) >= 4 and int.from_bytes(data[:4], "little") == 0x442A39D9:
+        return False, "UFG UIScreenChunk (qChunk 0x442A39D9)", magic_hex, details
+
+    # United Front Games UI screen / font container without a recognized qChunk UID
     return False, "UFG Proprietary Binary Screen/Font Container (.BIN)", magic_hex, details
 
 

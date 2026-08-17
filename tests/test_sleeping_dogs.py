@@ -28,11 +28,16 @@ from bfa.games.sleeping_dogs.inspector import (
     DEFAULT_GAME_PATH,
     SleepingDogsInspector,
 )
+from bfa.games.sleeping_dogs.localization import (
+    encode_uilocalization_chunk,
+    is_uilocalization_chunk,
+    parse_uilocalization_chunk,
+)
 from bfa.games.sleeping_dogs.text_resources import (
+    KNOWN_LOCALIZATION_RESOURCES,
     KNOWN_TEXT_RESOURCES,
-    classify_payload_evidence,
-    extract_strings_and_tags,
     inspect_text_resources,
+    scan_unknown_printable_bytes,
 )
 
 
@@ -74,11 +79,10 @@ class SleepingDogsInspectorTests(unittest.TestCase):
         decomp = decompress_qcmp(raw_literal)
         self.assertEqual(decomp, b"HELLO")
 
-        # Literal run + short match (tag 0x40 = mode 2, offset 5, length 2)
-        # mode 2 -> length 2, tag = (2 << 5) | (offset >> 8) = 0x40 | 0 = 0x40, byte2 = 5
+        # Literal run + short match (tag 0x40 = mode 2, offset 5, length = mode+1 = 3)
         raw_match = bytes([4]) + b"HELLO" + bytes([0x40, 5])
         decomp_match = decompress_qcmp(raw_match)
-        self.assertEqual(decomp_match, b"HELLOHE")
+        self.assertEqual(decomp_match, b"HELLOHEL")
 
     def test_bix_to_pmcq_derived_extraction(self) -> None:
         """Validates real BIX-to-PMCQ entry extraction derived from entry metadata."""
@@ -171,8 +175,8 @@ class SleepingDogsInspectorTests(unittest.TestCase):
         raw_data = ui_archive.read_raw_entry(entry)
         self.assertEqual(len(raw_data), 125664)
 
-        # Verified fixture header bytes
-        expected_head = bytes.fromhex("28d6d6cd403804bf")
+        # Verified fixture header bytes: UIScreenChunk qChunk UID 0x442A39D9
+        expected_head = bytes.fromhex("d9392a44d0ea0100")
         self.assertEqual(raw_data[:8], expected_head)
 
         # Verified SHA-256 hash of FontsEnglish.bin bounded sample (first 1024 bytes)
@@ -182,8 +186,8 @@ class SleepingDogsInspectorTests(unittest.TestCase):
         # Rigorous signature detection: Must NOT be falsely classified as Scaleform
         is_gfx, det_fmt, magic_hex, details = detect_font_payload_format(raw_data)
         self.assertFalse(is_gfx, "FontsEnglish.bin must not be falsely flagged as Scaleform GFx")
-        self.assertIn("UFG Proprietary Binary", det_fmt)
-        self.assertEqual(magic_hex, "28d6d6cd403804bf")
+        self.assertIn("UIScreenChunk", det_fmt)
+        self.assertEqual(magic_hex, "d9392a44d0ea0100")
 
         # Uncompressed direct extraction test
         extracted = ui_archive.extract_entry(entry, decompress=True)
@@ -222,9 +226,12 @@ class SleepingDogsInspectorTests(unittest.TestCase):
         assert global_bin is not None
         self.assertEqual(global_bin.symbol_hash_hex, "0xc7c69120")
         self.assertEqual(global_bin.size, 41584)
-        self.assertGreater(global_bin.extracted_strings_count, 0)
+        self.assertEqual(global_bin.extracted_strings_count, 0)
+        self.assertFalse(global_bin.is_verified_localization)
+        self.assertEqual(global_bin.decoded_localization_strings, [])
         self.assertIn("header_hex_8", global_bin.evidence)
-        self.assertEqual(global_bin.header_magic_hex, "0a76bdf340080200")
+        self.assertEqual(global_bin.header_magic_hex, "d9392a4400050000")
+        self.assertIn("UIScreenChunk", global_bin.detected_format)
 
     def test_full_inspector_report_generation(self) -> None:
         """Tests end-to-end report generation, dynamic compressed entry counts, and JSON output validity."""
@@ -247,7 +254,114 @@ class SleepingDogsInspectorTests(unittest.TestCase):
         self.assertEqual(parsed["total_entries"], 26894)
         self.assertEqual(parsed["fonts_english_location"]["symbol_hash"], "0x119ada9d")
         self.assertEqual(parsed["fonts_english_location"]["offset_bytes"], 49184768)
-        self.assertEqual(parsed["fonts_english_location"]["header_magic_hex"], "28d6d6cd403804bf")
+        self.assertEqual(parsed["fonts_english_location"]["header_magic_hex"], "d9392a44d0ea0100")
+
+    def _load_loc(self, relative_path: str) -> bytes:
+        ui_archive = BigArchive(self.game_dir / "UI.bix")
+        entry = ui_archive.find_by_path(relative_path)
+        self.assertIsNotNone(entry, relative_path)
+        assert entry is not None
+        data = ui_archive.extract_entry(entry, decompress=True)
+        self.assertEqual(len(data), entry.size)
+        return data
+
+    def test_qcmp_localization_exact_uncompressed_size(self) -> None:
+        """Compressed localization BINs must decompress to the BIX size with a valid loc header."""
+        data = self._load_loc(r"Data\UI\Localization\EN_GameplayDLCNinNP.bin")
+        self.assertTrue(is_uilocalization_chunk(data))
+        self.assertEqual(data[0x44:].split(b"\x00")[0], b"EN_GameplayDLCNinNP")
+
+    def test_localization_authoritative_english_ba_3b_store(self) -> None:
+        """Proves the decoder against a one-string English resource and public dump text."""
+        data = self._load_loc(r"Data\UI\Localization\EN_BA_3b_Store.bin")
+        table = parse_uilocalization_chunk(data)
+        self.assertEqual(table.debug_name, "EN_BA_3b_Store")
+        self.assertEqual(table.name_uid, qsymbol_hash("EN_BA_3b_Store"))
+        self.assertEqual(len(table.entries), 1)
+        entry = table.entries[0]
+        self.assertEqual(entry.text, "Dammit!")
+        self.assertEqual(entry.key_hash, qsymbol_hash("ZIWAI.M_BA.119.A"))
+        self.assertIsNone(entry.key_string)
+
+    def test_localization_known_english_chase_and_utf8_russian(self) -> None:
+        """Verifies multi-entry English dialogue and UTF-8 Russian against known game text."""
+        chase = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\EN_BA_3_Chase.bin"))
+        texts = {entry.key_hash: entry.text for entry in chase.entries}
+        self.assertEqual(texts[qsymbol_hash("WEI.M_BA.557.A")], "Where's Jackie?")
+        self.assertEqual(texts[qsymbol_hash("WEI.M_BA.559.A")], "I've come for you.")
+        self.assertEqual(texts[qsymbol_hash("WEI.M_BA.562.A")], "Then you're stupid, huh?")
+        self.assertEqual(texts[qsymbol_hash("ZIWAI.M_BA.561.A")], "I'm not afraid of you.")
+
+        russian = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\RU_BA_3b_Store.bin"))
+        self.assertEqual(russian.entries[0].text, "Проклятье!")
+        self.assertEqual(russian.encoding, "UTF-8")
+
+    def test_localization_debug_keys_are_qsymbol_preimages(self) -> None:
+        """DBG_LBL resources store the localization key as the string; hashes must match."""
+        table = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\DBG_LBL_BA_3b_Store.bin"))
+        self.assertEqual(len(table.entries), 1)
+        self.assertEqual(table.entries[0].text, "ZIWAI.M_BA.119.A")
+        self.assertEqual(table.entries[0].key_string, "ZIWAI.M_BA.119.A")
+        self.assertEqual(table.entries[0].key_hash, qsymbol_hash("ZIWAI.M_BA.119.A"))
+
+        hg = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\DBG_LBL_M_HGF_CM.bin"))
+        self.assertGreater(len(hg.entries), 100)
+        self.assertTrue(all(entry.key_string is not None for entry in hg.entries))
+        self.assertTrue(all(qsymbol_hash(entry.text) == entry.key_hash for entry in hg.entries))
+
+    def test_localization_preserves_breakline_and_font_tags(self) -> None:
+        """Control tags in decoded strings must match the bytes in the string pool."""
+        frontend = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\EN_Front-End.bin"))
+        social = next(entry.text for entry in frontend.entries if entry.text.startswith("Welcome to Social Hub!"))
+        self.assertIn("<br><br>", social)
+        self.assertTrue(social.startswith("Welcome to Social Hub!<br><br>In Social Hub you can compare"))
+
+        nin = parse_uilocalization_chunk(self._load_loc(r"Data\UI\Localization\EN_GameplayDLCNinNP.bin"))
+        tagged = [entry.text for entry in nin.entries if "<font" in entry.text]
+        self.assertGreater(len(tagged), 0)
+        self.assertTrue(any("color='#ad2f23'" in text for text in tagged))
+        self.assertTrue(any("</font>" in text for text in tagged))
+        self.assertTrue(any("<img" in entry.text for entry in nin.entries))
+
+    def test_localization_noop_round_trip(self) -> None:
+        """Decode then re-encode must reproduce the original BIN bytes before any translation."""
+        paths = [
+            r"Data\UI\Localization\EN_BA_3b_Store.bin",
+            r"Data\UI\Localization\EN_BA_3_Chase.bin",
+            r"Data\UI\Localization\RU_BA_3b_Store.bin",
+            r"Data\UI\Localization\DBG_LBL_BA_3b_Store.bin",
+            r"Data\UI\Localization\EN_M_HGF_CM.bin",
+            r"Data\UI\Localization\EN_GameplayDLCNinNP.bin",
+            r"Data\UI\Localization\EN_Front-End.bin",
+            r"Data\UI\Localization\DBG_LBL_M_HGF_CM.bin",
+        ]
+        for path in paths:
+            original = self._load_loc(path)
+            table = parse_uilocalization_chunk(original)
+            rebuilt = encode_uilocalization_chunk(table)
+            self.assertEqual(rebuilt, original, f"round-trip mismatch for {path}")
+
+    def test_inspect_localization_separates_evidence_from_decoded_text(self) -> None:
+        """Inspector must not treat screen printable bytes as localization strings."""
+        ui_archive = BigArchive(self.game_dir / "UI.bix")
+        infos = inspect_text_resources([ui_archive], KNOWN_LOCALIZATION_RESOURCES)
+        store = next(item for item in infos if item.resource_path.endswith("EN_BA_3b_Store.bin"))
+        self.assertTrue(store.is_verified_localization)
+        self.assertEqual(store.extracted_strings_count, 1)
+        self.assertEqual(store.decoded_localization_strings, ["Dammit!"])
+        self.assertEqual(store.unknown_printable_data, [])
+        self.assertEqual(store.evidence["debug_name"], "EN_BA_3b_Store")
+
+        screens = inspect_text_resources([ui_archive], KNOWN_TEXT_RESOURCES)
+        global_bin = next(item for item in screens if "Global.BIN" in item.resource_path)
+        self.assertFalse(global_bin.is_verified_localization)
+        self.assertEqual(global_bin.extracted_strings_count, 0)
+        self.assertEqual(global_bin.decoded_localization_strings, [])
+        self.assertGreater(len(global_bin.unknown_printable_data), 0)
+
+        # The leftover scanner must not be confused with localization extraction.
+        leftovers = scan_unknown_printable_bytes(b"\x00\xffabc\x01HELLO!\x00")
+        self.assertEqual(leftovers, ["HELLO!"])
 
 
 if __name__ == "__main__":

@@ -102,31 +102,40 @@ class BigArchive:
         h = qsymbol_hash(path)
         return self.find_by_hash(h)
 
+    def get_payload_offset(self, entry: BigEntry) -> int:
+        """Byte offset of an entry payload in the .big file.
+
+        BIX stores the offset in 4-byte units. The low 12 bits of field2 are an
+        additional byte delta (QuickBMS SizeEmpty). This matches both compressed
+        PMCQ blocks and uncompressed resources.
+        """
+        return (entry.offset * 4) + (entry.field2 & 0xFFF)
+
     def get_pmcq_offset(self, entry: BigEntry) -> int:
         """Calculates the exact byte offset of the PMCQ compressed block in the .big file."""
-        return (entry.offset * 4) + (entry.field2 & 0xFFF)
+        return self.get_payload_offset(entry)
 
     def read_raw_entry(self, entry: BigEntry) -> bytes:
         """Reads the raw bytes for an entry directly from the .big archive (read-only)."""
         if entry.size == 0 and not entry.is_compressed:
             return b""
 
+        payload_off = self.get_payload_offset(entry)
         with open(self.big_path, "rb") as f:
             if entry.is_compressed and entry.field3 > 0:
-                pmcq_off = self.get_pmcq_offset(entry)
-                f.seek(pmcq_off)
+                f.seek(payload_off)
                 data = f.read(entry.field3)
                 if len(data) < entry.field3:
                     raise IOError(
-                        f"Unexpected EOF reading {entry.field3} bytes at {pmcq_off} in {self.big_path}"
+                        f"Unexpected EOF reading {entry.field3} bytes at {payload_off} in {self.big_path}"
                     )
                 return data
             else:
-                f.seek(entry.offset)
+                f.seek(payload_off)
                 data = f.read(entry.size)
                 if len(data) < entry.size:
                     raise IOError(
-                        f"Unexpected EOF reading {entry.size} bytes at {entry.offset} in {self.big_path}"
+                        f"Unexpected EOF reading {entry.size} bytes at {payload_off} in {self.big_path}"
                     )
                 return data
 

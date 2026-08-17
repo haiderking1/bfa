@@ -21,6 +21,7 @@ from bfa.games.sleeping_dogs.models import (
     TextResourceInfo,
 )
 from bfa.games.sleeping_dogs.text_resources import (
+    KNOWN_LOCALIZATION_RESOURCES,
     KNOWN_TEXT_RESOURCES,
     inspect_text_resources,
 )
@@ -110,8 +111,11 @@ class SleepingDogsInspector:
             "is_scaleform_gfx": font_res_info.is_scaleform_gfx,
         }
 
-        # 4. Text & Screen BIN resources
-        text_resources = inspect_text_resources(self.archives, KNOWN_TEXT_RESOURCES)
+        # 4. UI screens (binary evidence) and verified localization BINs
+        text_resources = inspect_text_resources(
+            self.archives,
+            KNOWN_TEXT_RESOURCES + KNOWN_LOCALIZATION_RESOURCES,
+        )
 
         # 5. Proton compatibility
         proton_info = self.check_proton_compatibility()
@@ -125,13 +129,13 @@ class SleepingDogsInspector:
                 "entry_record_size_bytes": 24,
                 "fields": [
                     "symbol_hash (uint32, UFG qSymbol)",
-                    "offset (uint32, 4-byte unit offset index for compressed entries)",
+                    "offset (uint32, 4-byte unit offset; byte position is offset*4 + (field2 & 0xFFF))",
                     "field2 (uint32, lower 12 bits: byte sub-offset, upper 20 bits: chunking metadata)",
                     "field3 (uint32, csize = compressed stream size in .big)",
                     "flags (uint32, extra_size / alignment flags)",
                     "size (uint32, usize = target uncompressed file size)",
                 ],
-                "pmcq_offset_formula": "pmcq_offset = (offset * 4) + (field2 & 0xFFF)",
+                "pmcq_offset_formula": "payload_offset = (offset * 4) + (field2 & 0xFFF)",
             },
             "hash_algorithm": {
                 "name": "UFG qSymbol / qStringHashUpper32",
@@ -145,10 +149,19 @@ class SleepingDogsInspector:
                 "header": "PMCQ / QCMP magic (40 bytes with 64-bit size headers in Definitive Edition)",
             },
             "ui_and_font_formats": {
-                "ui_screens": "United Front Games proprietary .BIN screen containers with embedded UI strings",
-                "font_resource": "UFG proprietary .BIN binary font package configured in FontDefinition.xml",
+                "ui_screens": "UFG UIScreenChunk (qChunk UID 0x442A39D9). Binary UI packages, not localization tables.",
+                "font_resource": "UFG UIScreenChunk font package configured in FontDefinition.xml",
                 "font_config": "data/UI/Config/FontDefinition.xml",
                 "target_font_families": ["DINCondensedTT", "Proxima Nova Lt Cyr", "Magistral Medium"],
+            },
+            "localization_format": {
+                "path_pattern": r"Data\UI\Localization\{LANG}_{SECTION}.bin",
+                "qchunk_uid": "0x90CE6B7A",
+                "qchunk_name": "UILocalizationChunk",
+                "key_hash": "qStringHashUpper32 / qSymbol of the localization key (not of the translated text)",
+                "string_encoding": "UTF-8 null-terminated, hashes sorted ascending",
+                "control_tags": "Stored as literal UTF-8 markup (<br>, <font>, <img>, &nbsp;)",
+                "extracted_strings_count": "Valid only for verified UILocalizationChunk resources; zero for screens",
             },
         }
 

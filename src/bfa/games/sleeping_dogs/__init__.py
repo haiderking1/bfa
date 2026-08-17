@@ -9,21 +9,30 @@ from bfa.games.sleeping_dogs.font import (
 )
 from bfa.games.sleeping_dogs.hash import normalize_path, qsymbol_hash, qsymbol_hex
 from bfa.games.sleeping_dogs.inspector import SleepingDogsInspector
+from bfa.games.sleeping_dogs.localization import (
+    encode_uilocalization_chunk,
+    is_uilocalization_chunk,
+    parse_uilocalization_chunk,
+)
 from bfa.games.sleeping_dogs.models import (
     ArchiveInfo,
     BigEntry,
     FontMapping,
     FontResourceInfo,
     LanguageFontDefinition,
+    LocalizationEntry,
+    LocalizationTable,
     ProtonCompatibilityInfo,
     SleepingDogsInspectionReport,
     TextResourceInfo,
 )
 from bfa.games.sleeping_dogs.text_resources import (
+    KNOWN_LOCALIZATION_RESOURCES,
+    KNOWN_SCREEN_RESOURCES,
     KNOWN_TEXT_RESOURCES,
     classify_payload_evidence,
-    extract_strings_and_tags,
     inspect_text_resources,
+    scan_unknown_printable_bytes,
 )
 
 __all__ = [
@@ -32,8 +41,12 @@ __all__ = [
     "BigEntry",
     "FontMapping",
     "FontResourceInfo",
+    "KNOWN_LOCALIZATION_RESOURCES",
+    "KNOWN_SCREEN_RESOURCES",
     "KNOWN_TEXT_RESOURCES",
     "LanguageFontDefinition",
+    "LocalizationEntry",
+    "LocalizationTable",
     "ProtonCompatibilityInfo",
     "SleepingDogsInspectionReport",
     "SleepingDogsInspector",
@@ -41,12 +54,15 @@ __all__ = [
     "classify_payload_evidence",
     "decompress_qcmp",
     "detect_font_payload_format",
-    "extract_strings_and_tags",
+    "encode_uilocalization_chunk",
     "inspect_font_resource",
     "inspect_text_resources",
     "is_qcmp",
+    "is_uilocalization_chunk",
     "normalize_path",
     "parse_font_definition_xml",
+    "parse_uilocalization_chunk",
     "qsymbol_hash",
     "qsymbol_hex",
+    "scan_unknown_printable_bytes",
 ]
