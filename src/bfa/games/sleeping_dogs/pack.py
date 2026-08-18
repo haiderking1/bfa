@@ -60,6 +60,7 @@ def build_translated_resources(
             table = shape_localization_table(
                 database.reconstructed_table(resource),
                 shape_context,
+                resource_debug_name=str(resource["debug_name"]),
             )
             changed = any(
                 item.translated_text != item.original_text

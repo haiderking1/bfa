@@ -121,7 +121,7 @@ def parse_cfx_movie(data: bytes) -> GfxFontMovie:
     if len(data) < 8 or data[:3] != CFX_SIGNATURE:
         raise ValueError("Font package payload is not a CFX movie")
     version = data[3]
-    if version != CFX_VERSION:
+    if version not in {8, 10}:
         raise ValueError(f"Unsupported CFX version {version}")
     file_length = struct.unpack_from("<I", data, 4)[0]
     if file_length < 8:

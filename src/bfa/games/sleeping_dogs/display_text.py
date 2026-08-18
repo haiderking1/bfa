@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 import re
 
-from bfa.fonts.shape import ShapeContext, load_shape_context, shape_plain_text, strip_cjk
+from bfa.fonts.shape import ShapeContext, has_arabic, load_shape_context, strip_cjk
+from bfa.games.sleeping_dogs.layout.profile import wrap_metrics_for
+from bfa.games.sleeping_dogs.layout.typeset import typeset_localization_text
 from bfa.games.sleeping_dogs.localization import localization_control_tag_spans
 from bfa.games.sleeping_dogs.models import LocalizationEntry, LocalizationTable
 from bfa.games.sleeping_dogs.validation import localization_placeholder_spans
@@ -34,30 +36,37 @@ def strip_stage_directions(text: str) -> str:
     return _HORIZONTAL_SPACE_RE.sub(" ", text).strip()
 
 
-def shape_localization_text(text: str, context: ShapeContext | None = None) -> str:
-    """Strips leaked CJK/stage notes and pre-shapes Arabic around protected tokens."""
+def shape_localization_text(
+    text: str,
+    context: ShapeContext | None = None,
+    *,
+    resource_debug_name: str = "",
+    key_string: str | None = None,
+) -> str:
+    """Strips leaked CJK/stage notes, then typesets Arabic for LTR Scaleform."""
     cleaned = strip_stage_directions(strip_cjk(text))
     if cleaned == "":
         return cleaned
     ctx = context or load_shape_context()
-    spans = _protected_spans(cleaned)
-    if not spans:
-        return shape_plain_text(cleaned, ctx)
-    pieces: list[str] = []
-    cursor = 0
-    for start, end in spans:
-        if start > cursor:
-            pieces.append(shape_plain_text(cleaned[cursor:start], ctx))
-        pieces.append(cleaned[start:end])
-        cursor = end
-    if cursor < len(cleaned):
-        pieces.append(shape_plain_text(cleaned[cursor:], ctx))
-    return "".join(pieces)
+    if not has_arabic(cleaned):
+        return cleaned
+    metrics = wrap_metrics_for(
+        resource_debug_name=resource_debug_name,
+        key_string=key_string,
+    )
+    return typeset_localization_text(
+        cleaned,
+        ctx,
+        width_px=metrics.width_px,
+        font_size_px=metrics.font_size_px,
+    )
 
 
 def shape_localization_table(
     table: LocalizationTable,
     context: ShapeContext | None = None,
+    *,
+    resource_debug_name: str = "",
 ) -> LocalizationTable:
     """Returns a copy whose entry texts are shaped for in-game display."""
     ctx = context or load_shape_context()
@@ -66,7 +75,12 @@ def shape_localization_table(
         entries=[
             LocalizationEntry(
                 key_hash=entry.key_hash,
-                text=shape_localization_text(entry.text, ctx),
+                text=shape_localization_text(
+                    entry.text,
+                    ctx,
+                    resource_debug_name=resource_debug_name,
+                    key_string=entry.key_string,
+                ),
                 key_string=entry.key_string,
             )
             for entry in table.entries

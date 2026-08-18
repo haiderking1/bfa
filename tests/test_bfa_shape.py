@@ -41,8 +41,23 @@ class ShapeTests(unittest.TestCase):
         source = "<br>اللعنة! %s"
         shaped = shape_localization_text(source, self.context)
         self.assertTrue(shaped.startswith("<br>"))
-        self.assertTrue(shaped.endswith(" %s"))
+        self.assertIn("%s", shaped)
         self.assertNotEqual(shaped, source)
+
+    def test_placeholder_parens_are_kept(self) -> None:
+        self.assertEqual(strip_stage_directions("Thanks (%s)"), "Thanks (%s)")
+        self.assertEqual(strip_stage_directions("(ملاحظة) القيمة %s"), "القيمة %s")
+        self.assertEqual(strip_stage_directions("جمع %s (ليس %d)"), "جمع %s (ليس %d)")
+        shaped = shape_localization_text("شكراً (%s)", self.context)
+        thanks = shape_plain_text("شكراً", self.context)
+        self.assertTrue(shaped.startswith("(%s)"))
+        self.assertIn(thanks, shaped)
+        self.assertEqual(shaped.count("("), 1)
+        self.assertEqual(shaped.count(")"), 1)
+
+    def test_mixed_placeholder_order_is_kept(self) -> None:
+        shaped = shape_localization_text("خذ %s واحصل على %d", self.context)
+        self.assertLess(shaped.index("%s"), shaped.index("%d"))
 
     def test_english_is_unchanged(self) -> None:
         self.assertEqual(shape_localization_text("MAIN MENU", self.context), "MAIN MENU")
@@ -59,15 +74,6 @@ class ShapeTests(unittest.TestCase):
         self.assertNotIn(")", shaped)
         self.assertTrue(any(0xFE70 <= ord(char) <= 0xFEFF for char in shaped))
         self.assertEqual(shaped, shape_localization_text("هو لم يكن يعلم", self.context))
-
-    def test_placeholder_parens_are_kept(self) -> None:
-        self.assertEqual(strip_stage_directions("Thanks (%s)"), "Thanks (%s)")
-        self.assertEqual(strip_stage_directions("(ملاحظة) القيمة %s"), "القيمة %s")
-        self.assertEqual(strip_stage_directions("جمع %s (ليس %d)"), "جمع %s (ليس %d)")
-        shaped = shape_localization_text("شكراً (%s)", self.context)
-        self.assertTrue(shaped.endswith("(%s)"))
-        self.assertEqual(shaped.count("("), 1)
-        self.assertEqual(shaped.count(")"), 1)
 
     def test_english_nis_prefix_and_tags_are_stripped_safely(self) -> None:
         self.assertEqual(
