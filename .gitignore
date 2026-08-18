@@ -17,3 +17,6 @@ __pycache__/
 
 # Generated inspection reports
 reports/
+
+# Isolated game adapter output
+build/

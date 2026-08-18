@@ -1,17 +1,40 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any, Sequence
 
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI, RateLimitError
 
 from bfa.config import Settings
 from bfa.models import PendingString
+from bfa.translation_prompt import build_translation_messages
 
 
 class ProviderError(RuntimeError):
     """Raised when the model response cannot be used for translation."""
+
+
+class RateLimitProviderError(ProviderError):
+    """A provider rejection that should trigger shared worker throttling."""
+
+    def __init__(self, message: str, retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.rate_limited = True
+
+
+def _retry_after(response: object) -> float | None:
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("retry-after")
+    if raw is None:
+        return None
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
 
 
 def _parse_json_response(content: str) -> Any:
@@ -54,23 +77,12 @@ def _parse_translations(content: str, batch: Sequence[PendingString]) -> dict[in
     return result
 
 
-def _messages(batch: Sequence[PendingString], target_language: str) -> list[dict[str, str]]:
-    items = [{"id": item.id, "text": item.source_text} for item in batch]
-    system = f"""
-You translate video game UI and subtitles into {target_language}.
-Return only valid JSON in this exact shape:
-{{"translations":[{{"id":123,"text":"translated text"}}]}}
-
-Translate every item exactly once and preserve every id. Preserve placeholders,
-variables, markup tags, escape sequences, line breaks, controller buttons,
-format specifiers, and capitalization conventions unless the target language
-requires a change. Do not translate JSON keys, identifiers, or placeholder names.
-Do not add explanations or markdown outside the JSON object.
-""".strip()
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": json.dumps(items, ensure_ascii=False)},
-    ]
+def _messages(
+    batch: Sequence[PendingString],
+    target_language: str,
+    brief: str = "",
+) -> list[dict[str, str]]:
+    return build_translation_messages(batch, target_language, brief)
 
 
 class OpenCodeProvider:
@@ -89,25 +101,29 @@ class OpenCodeProvider:
         batch: Sequence[PendingString],
         target_language: str,
     ) -> dict[int, str]:
-        last_error: Exception | None = None
-        for attempt in range(self.settings.request_retries + 1):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=self.settings.model,
-                    messages=_messages(batch, target_language),
-                    extra_body={"thinking": {"type": self.settings.thinking}},
-                )
-                content = response.choices[0].message.content
-                if not content:
-                    raise ProviderError("model returned an empty response")
-                return _parse_translations(content, batch)
-            except Exception as exc:
-                last_error = exc
-                if attempt < self.settings.request_retries:
-                    await asyncio.sleep(min(2**attempt, 8))
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.settings.model,
+                messages=_messages(batch, target_language, self.settings.translation_brief),
+                extra_body={"thinking": {"type": self.settings.thinking}},
+            )
+        except RateLimitError as exc:
+            raise RateLimitProviderError(
+                str(exc),
+                _retry_after(exc.response),
+            ) from exc
+        except APIStatusError as exc:
+            if exc.status_code == 429:
+                raise RateLimitProviderError(
+                    str(exc),
+                    _retry_after(exc.response),
+                ) from exc
+            raise
 
-        assert last_error is not None
-        raise ProviderError(str(last_error)) from last_error
+        content = response.choices[0].message.content
+        if not content:
+            raise ProviderError("model returned an empty response")
+        return _parse_translations(content, batch)
 
     async def close(self) -> None:
         await self.client.close()

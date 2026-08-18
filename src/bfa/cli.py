@@ -11,6 +11,7 @@ from .config import ConfigurationError, Settings
 from sqlite.repository import TranslationDatabase
 
 from .translation_service import translate_pending
+from bfa.games.sleeping_dogs.cli import add_sleeping_dogs_subcommands, run as run_sleeping_dogs
 
 
 def _database_argument(parser: argparse.ArgumentParser) -> None:
@@ -25,13 +26,18 @@ def _database_argument(parser: argparse.ArgumentParser) -> None:
 def _translation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target-language", help="Target language (default: Arabic)")
     parser.add_argument("--workers", type=int, help="Concurrent translation workers")
-    parser.add_argument("--batch-size", type=int, help="Strings per translation request")
+    parser.add_argument("--batch-size", type=int, help="Maximum strings per translation request")
+    parser.add_argument(
+        "--max-chunk-characters",
+        type=int,
+        help="Maximum source characters per request (default: 4000)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bfa",
-        description="Native game localization pipeline: JSON -> SQLite -> translated JSON",
+        description="Native game localization pipeline: JSON or Sleeping Dogs BINs -> SQLite -> translated output",
     )
     commands = parser.add_subparsers(dest="command")
 
@@ -55,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     _database_argument(pipeline_parser)
     _translation_arguments(pipeline_parser)
 
+    sleeping_dogs_parser = commands.add_parser(
+        "sleeping-dogs",
+        help="Sleeping Dogs: Definitive Edition localization adapter",
+    )
+    add_sleeping_dogs_subcommands(sleeping_dogs_parser)
+
     return parser
 
 
@@ -71,6 +83,11 @@ def _settings(args: argparse.Namespace) -> Settings:
         if args.batch_size <= 0:
             raise ConfigurationError("--batch-size must be a positive integer")
         updates["batch_size"] = args.batch_size
+    max_chunk_characters = getattr(args, "max_chunk_characters", None)
+    if max_chunk_characters is not None:
+        if max_chunk_characters <= 0:
+            raise ConfigurationError("--max-chunk-characters must be a positive integer")
+        updates["max_chunk_characters"] = max_chunk_characters
     return replace(settings, **updates)
 
 
@@ -123,6 +140,10 @@ def _run(args: argparse.Namespace) -> int:
                 }
             )
         return 1 if summary.failed else 0
+
+    if args.command == "sleeping-dogs":
+        settings = _settings(args) if args.sd_command == "translate" else None
+        return run_sleeping_dogs(args, settings)
 
     build_parser().print_help()
     return 0

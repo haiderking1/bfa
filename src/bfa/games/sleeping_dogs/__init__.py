@@ -1,7 +1,7 @@
 """Sleeping Dogs: Definitive Edition format discovery and inspection package."""
 
 from bfa.games.sleeping_dogs.archive import BigArchive
-from bfa.games.sleeping_dogs.compression import decompress_qcmp, is_qcmp
+from bfa.games.sleeping_dogs.compression import compress_qcmp, decompress_qcmp, is_qcmp, wrap_pmcq
 from bfa.games.sleeping_dogs.font import (
     detect_font_payload_format,
     inspect_font_resource,
@@ -19,11 +19,14 @@ from bfa.games.sleeping_dogs.models import (
     BigEntry,
     FontMapping,
     FontResourceInfo,
+    ImportSummary,
     LanguageFontDefinition,
     LocalizationEntry,
     LocalizationTable,
+    PackSummary,
     ProtonCompatibilityInfo,
     SleepingDogsInspectionReport,
+    StagedLocalizationEntry,
     TextResourceInfo,
 )
 from bfa.games.sleeping_dogs.text_resources import (
@@ -41,17 +44,21 @@ __all__ = [
     "BigEntry",
     "FontMapping",
     "FontResourceInfo",
+    "ImportSummary",
     "KNOWN_LOCALIZATION_RESOURCES",
     "KNOWN_SCREEN_RESOURCES",
     "KNOWN_TEXT_RESOURCES",
     "LanguageFontDefinition",
     "LocalizationEntry",
     "LocalizationTable",
+    "PackSummary",
     "ProtonCompatibilityInfo",
     "SleepingDogsInspectionReport",
     "SleepingDogsInspector",
+    "StagedLocalizationEntry",
     "TextResourceInfo",
     "classify_payload_evidence",
+    "compress_qcmp",
     "decompress_qcmp",
     "detect_font_payload_format",
     "encode_uilocalization_chunk",
@@ -65,4 +72,5 @@ __all__ = [
     "qsymbol_hash",
     "qsymbol_hex",
     "scan_unknown_printable_bytes",
+    "wrap_pmcq",
 ]

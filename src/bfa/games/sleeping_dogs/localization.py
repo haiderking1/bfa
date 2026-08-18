@@ -27,6 +27,7 @@ text inside the string pool and are preserved exactly.
 
 from __future__ import annotations
 
+import re
 import struct
 from typing import List, Tuple
 
@@ -42,11 +43,15 @@ TYPE_UID_OFFSET = 0x40
 DEBUG_NAME_OFFSET = 0x44
 DEBUG_NAME_SIZE = 36
 QOFFSET_FLAG_MASK = 0x3
+FILE_ALIGNMENT = 8
+QCHUNK_SIZE_FIELD_OFFSET = 4
+QCHUNK_DATA_SIZE_FIELD_OFFSET = 8
+_ENTITY_RE = re.compile(r"&(?:[A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);", re.IGNORECASE)
 
 
 def is_uilocalization_chunk(data: bytes) -> bool:
     """Returns True if data starts with a UILocalizationChunk qChunk header."""
-    if len(data) < 16:
+    if len(data) < 4:
         return False
     return struct.unpack_from("<I", data, 0)[0] == UI_LOCALIZATION_CHUNK_UID
 
@@ -150,34 +155,70 @@ def parse_uilocalization_chunk(data: bytes) -> LocalizationTable:
     )
 
 
-def encode_uilocalization_chunk(table: LocalizationTable) -> bytes:
+def _encode_string_pool(entries: List[LocalizationEntry]) -> bytes:
+    parts: List[bytes] = []
+    for entry in entries:
+        raw = entry.text.encode("utf-8")
+        if b"\x00" in raw:
+            raise ValueError("Localization string contains an embedded null byte")
+        parts.append(raw + b"\x00")
+    return b"".join(parts)
+
+
+def encode_uilocalization_chunk(
+    table: LocalizationTable,
+    *,
+    recompute_layout: bool = False,
+) -> bytes:
     """Re-encodes a parsed UILocalizationChunk.
 
     A no-op decode/encode of an unmodified table must reproduce the original
     bytes, including control tags, null terminators, and padding.
+
+    When string lengths change, pass recompute_layout=True so the string pool
+    size, mChunkSize, qChunk size/data-size, and 8-byte file padding are
+    rewritten for the new payload.
     """
     hash_blob = b"".join(struct.pack("<I", entry.key_hash) for entry in table.entries)
-    pool = b"".join(entry.text.encode("utf-8") + b"\x00" for entry in table.entries)
-    pool += table.string_pool_padding
+    pool = _encode_string_pool(table.entries)
+    if recompute_layout:
+        string_pool_padding = b""
+        chunk_payload_padding = b""
+    else:
+        string_pool_padding = table.string_pool_padding
+        chunk_payload_padding = table.chunk_payload_padding
+    pool += string_pool_padding
     payload = (
         struct.pack("<II", len(hash_blob), len(pool))
         + hash_blob
         + pool
-        + table.chunk_payload_padding
+        + chunk_payload_padding
     )
 
     prefix = bytearray(table.prefix)
     if len(prefix) < CHUNK_EXTRAS_OFFSET + 16:
         raise ValueError("Localization table prefix is too short to re-encode")
+
+    if recompute_layout:
+        unpadded = len(prefix) + len(payload)
+        pad = (FILE_ALIGNMENT - (unpadded % FILE_ALIGNMENT)) % FILE_ALIGNMENT
+        tail_padding = b"\x00" * pad
+    else:
+        tail_padding = table.tail_padding
+
     struct.pack_into("<I", prefix, CHUNK_EXTRAS_OFFSET, len(payload))
     struct.pack_into("<I", prefix, CHUNK_EXTRAS_OFFSET + 4, table.m_padding)
     struct.pack_into("<Q", prefix, CHUNK_EXTRAS_OFFSET + 8, table.qoffset)
-    return bytes(prefix) + payload + table.tail_padding
+
+    qchunk_size = len(prefix) + len(payload) + len(tail_padding) - QCHUNK_SIZE
+    struct.pack_into("<I", prefix, QCHUNK_SIZE_FIELD_OFFSET, qchunk_size)
+    struct.pack_into("<I", prefix, QCHUNK_DATA_SIZE_FIELD_OFFSET, qchunk_size)
+    return bytes(prefix) + payload + tail_padding
 
 
-def localization_control_tags(text: str) -> List[str]:
-    """Returns literal control-tag substrings present in a decoded string."""
-    tags: List[str] = []
+def localization_control_tag_spans(text: str) -> List[Tuple[int, int, str]]:
+    """Returns (start, end, tag) spans in the same order as localization_control_tags."""
+    tags: List[Tuple[int, int, str]] = []
     lower = text.lower()
     start = 0
     while True:
@@ -187,19 +228,16 @@ def localization_control_tags(text: str) -> List[str]:
         close_at = lower.find(">", open_at + 1)
         if close_at < 0:
             break
-        tags.append(text[open_at : close_at + 1])
+        tags.append((open_at, close_at + 1, text[open_at : close_at + 1]))
         start = close_at + 1
-    if "&nbsp;" in lower:
-        # Preserve the source spelling of each entity occurrence.
-        search_at = 0
-        lowered = text
-        while True:
-            found = lowered.lower().find("&nbsp;", search_at)
-            if found < 0:
-                break
-            tags.append(text[found : found + 6])
-            search_at = found + 6
+    for match in _ENTITY_RE.finditer(text):
+        tags.append((match.start(), match.end(), match.group()))
     return tags
+
+
+def localization_control_tags(text: str) -> List[str]:
+    """Returns literal control-tag substrings present in a decoded string."""
+    return [tag for _start, _end, tag in localization_control_tag_spans(text)]
 
 
 def table_binary_evidence(table: LocalizationTable) -> dict:

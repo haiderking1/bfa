@@ -191,3 +191,63 @@ class SleepingDogsInspectionReport:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class DiscoveredLocalizationResource:
+    """A UILocalizationChunk located in a BIG/BIX pair via its qSymbol path."""
+
+    archive_name: str
+    resource_path: str
+    source_language: str
+    debug_name: str
+    symbol_hash: int
+    is_compressed: bool
+    extra_sz: int
+    uncompressed: bytes
+    raw: bytes
+    table: LocalizationTable
+
+
+@dataclass
+class StagedLocalizationEntry:
+    """Normalized localization entry stored in the Sleeping Dogs SQLite staging DB."""
+
+    id: int
+    resource_path: str
+    archive_name: str
+    source_language: str
+    entry_index: int
+    key_hash: int
+    key_string: Optional[str]
+    original_text: str
+    translated_text: Optional[str]
+    status: str
+    control_tags: List[str]
+    error_text: Optional[str]
+    attempts: int
+
+
+@dataclass
+class ImportSummary:
+    """Result of importing discovered Sleeping Dogs localization resources."""
+
+    resources: int
+    entries: int
+    compressed_resources: int
+    direct_resources: int
+    source_language: str
+
+
+@dataclass
+class PackSummary:
+    """Result of writing translated localization BINs to an isolated workspace."""
+
+    output_dir: str
+    resources_written: int
+    resources_skipped: int
+    entries_written: int
+    compressed_resources: int
+    direct_resources: int
+    failed_resources: int
+    overlay_resources: int = 0

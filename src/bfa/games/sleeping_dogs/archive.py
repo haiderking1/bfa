@@ -115,6 +115,19 @@ class BigArchive:
         """Calculates the exact byte offset of the PMCQ compressed block in the .big file."""
         return self.get_payload_offset(entry)
 
+    def read_raw_prefix(self, entry: BigEntry, size: int = 4) -> bytes:
+        """Reads the first bytes of an entry payload without loading the whole resource."""
+        if size <= 0:
+            return b""
+        payload_off = self.get_payload_offset(entry)
+        available = entry.field3 if entry.is_compressed and entry.field3 > 0 else entry.size
+        to_read = min(size, available) if available > 0 else 0
+        if to_read <= 0:
+            return b""
+        with open(self.big_path, "rb") as f:
+            f.seek(payload_off)
+            return f.read(to_read)
+
     def read_raw_entry(self, entry: BigEntry) -> bytes:
         """Reads the raw bytes for an entry directly from the .big archive (read-only)."""
         if entry.size == 0 and not entry.is_compressed:

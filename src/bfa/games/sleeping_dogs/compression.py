@@ -1,4 +1,4 @@
-"""QCMP (qcmp1) decompression implementation for United Front Games engine."""
+"""QCMP (qcmp1) compression and decompression for the United Front Games engine."""
 
 from __future__ import annotations
 
@@ -112,3 +112,53 @@ def decompress_qcmp(data: bytes, uncompressed_size: Optional[int] = None) -> byt
                     out.append(0)
 
     return bytes(out)
+
+
+PMCQ_HEADER_SIZE = 64
+_QCMP_MAX_LITERAL = 32
+
+
+def compress_qcmp(data: bytes) -> bytes:
+    """Encodes bytes as a valid QCMP stream of literal runs.
+
+    The stream is not size-optimal. It exists so changed-length localization
+    resources can be wrapped in a PMCQ header and later decompressed by the
+    verified decoder.
+    """
+    out = bytearray()
+    offset = 0
+    while offset < len(data):
+        run = min(_QCMP_MAX_LITERAL, len(data) - offset)
+        out.append(run - 1)
+        out.extend(data[offset : offset + run])
+        offset += run
+    return bytes(out)
+
+
+def wrap_pmcq(
+    uncompressed: bytes,
+    *,
+    extra_sz: int = 0,
+    uncompressed_hash: int = 0,
+) -> bytes:
+    """Wraps uncompressed resource bytes in a Definitive Edition PMCQ block.
+
+    Layout matches verified UI localization payloads: 64-byte header, type 1,
+    version 1, data offset 64, csize equal to the full wrapped block, usize
+    equal to the uncompressed resource size.
+    """
+    payload = compress_qcmp(uncompressed)
+    total_size = PMCQ_HEADER_SIZE + len(payload)
+    header = struct.pack(
+        "<4sHHIIQQQ",
+        b"PMCQ",
+        1,
+        1,
+        PMCQ_HEADER_SIZE,
+        extra_sz,
+        total_size,
+        len(uncompressed),
+        uncompressed_hash,
+    )
+    header += bytes(PMCQ_HEADER_SIZE - len(header))
+    return header + payload
