@@ -3,6 +3,7 @@
 
 #include "font/outline/outline.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* GDEF glyph classes */
@@ -15,6 +16,14 @@ typedef enum {
 
 #define GLYPH_MAX_UNI 4
 
+/* mark attachment points (GPOS). bases carry both, a mark carries the
+   one it hangs from. */
+typedef struct {
+	int x, y;
+} Anchor;
+
+typedef enum { MARK_ABOVE, MARK_BELOW } MarkSide;
+
 typedef struct {
 	char *name;
 	uint32_t uni[GLYPH_MAX_UNI];
@@ -22,6 +31,10 @@ typedef struct {
 	int adv;
 	GlyphClass cls;
 	Outline ol;
+	bool anchored;
+	Anchor top, bottom; /* bases */
+	MarkSide side;      /* marks: which base anchor they take */
+	Anchor attach;      /* marks */
 } Glyph;
 
 typedef struct {

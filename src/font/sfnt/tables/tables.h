@@ -16,6 +16,8 @@ void table_hmtx(const Font *f, const Stats *st, Buf *out);
 void table_post(const Font *f, const Stats *st, Buf *out);
 void table_gdef(const Font *f, const Stats *st, Buf *out);
 void table_gsub(const Font *f, const Stats *st, Buf *out);
+void table_gpos(const Font *f, const Stats *st, Buf *out);
+bool font_has_marks(const Font *f);
 
 /* glyf and loca come out together */
 void table_glyf(const Font *f, const Stats *st, Buf *glyf, Buf *loca);

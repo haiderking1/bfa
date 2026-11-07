@@ -30,12 +30,22 @@ int main(void)
 	CHECK(!strcmp(f.gs.g[0].name, ".notdef"));
 	for (int i = 0; i < f.gs.n; i++) {
 		const Glyph *g = &f.gs.g[i];
-		bool blank = !strcmp(g->name, "space") || !strcmp(g->name, "nbspace") ||
-			     !strcmp(g->name, "zwj") || !strcmp(g->name, "zwnj");
-		if (!blank && g->cls != GC_MARK)
+		static const char *blanks[] = {"space", "nbspace", "zwj", "zwnj",
+					       "lrm", "rlm", "alm"};
+		bool blank = false, zero = false;
+		for (size_t k = 0; k < sizeof blanks / sizeof *blanks; k++)
+			if (!strcmp(g->name, blanks[k])) {
+				blank = true;
+				zero = k >= 2;
+			}
+		if (!blank)
 			CHECK(g->ol.n > 0);
-		if (g->cls != GC_MARK && strcmp(g->name, "zwj") && strcmp(g->name, "zwnj"))
+		if (g->cls == GC_MARK || zero)
+			CHECK_EQ(g->adv, 0);
+		else
 			CHECK(g->adv > 0);
+		if (g->nuni && arabic_letter(g->uni[0]))
+			CHECK(g->anchored);
 		for (int c = 0; c < g->ol.n; c++)
 			CHECK(g->ol.c[c].n >= 3);
 		Box b;

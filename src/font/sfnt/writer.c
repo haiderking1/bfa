@@ -27,44 +27,57 @@ static int tag_cmp(const void *a, const void *b)
 	return memcmp(((const Table *)a)->tag, ((const Table *)b)->tag, 4);
 }
 
+typedef void (*TableFn)(const Font *, const Stats *, Buf *);
+
 void sfnt_build(const Font *f, Buf *out)
 {
 	Stats st;
 	stats_build(f, &st);
 
-	enum { NT = 12 };
-	Table t[NT];
-	static const char *tags[NT] = {"GDEF", "GSUB", "OS/2", "cmap", "glyf", "head",
-				       "hhea", "hmtx", "loca", "maxp", "name", "post"};
-	for (int i = 0; i < NT; i++) {
-		memcpy(t[i].tag, tags[i], 4);
-		buf_init(&t[i].data);
+	enum { MAX_TABLES = 16 };
+	Table t[MAX_TABLES];
+	int nt = 0;
+	static const struct {
+		const char *tag;
+		TableFn fn;
+	} simple[] = {
+		{"GDEF", table_gdef}, {"GSUB", table_gsub}, {"OS/2", table_os2},
+		{"cmap", table_cmap}, {"head", table_head}, {"hhea", table_hhea},
+		{"hmtx", table_hmtx}, {"maxp", table_maxp}, {"name", table_name},
+		{"post", table_post},
+	};
+	for (size_t i = 0; i < sizeof simple / sizeof *simple; i++) {
+		memcpy(t[nt].tag, simple[i].tag, 4);
+		buf_init(&t[nt].data);
+		simple[i].fn(f, &st, &t[nt].data);
+		nt++;
 	}
-	table_gdef(f, &st, &t[0].data);
-	table_gsub(f, &st, &t[1].data);
-	table_os2(f, &st, &t[2].data);
-	table_cmap(f, &st, &t[3].data);
-	table_glyf(f, &st, &t[4].data, &t[8].data);
-	table_head(f, &st, &t[5].data);
-	table_hhea(f, &st, &t[6].data);
-	table_hmtx(f, &st, &t[7].data);
-	table_maxp(f, &st, &t[9].data);
-	table_name(f, &st, &t[10].data);
-	table_post(f, &st, &t[11].data);
-	qsort(t, NT, sizeof *t, tag_cmp);
+	if (font_has_marks(f)) {
+		memcpy(t[nt].tag, "GPOS", 4);
+		buf_init(&t[nt].data);
+		table_gpos(f, &st, &t[nt].data);
+		nt++;
+	}
+	memcpy(t[nt].tag, "glyf", 4);
+	memcpy(t[nt + 1].tag, "loca", 4);
+	buf_init(&t[nt].data);
+	buf_init(&t[nt + 1].data);
+	table_glyf(f, &st, &t[nt].data, &t[nt + 1].data);
+	nt += 2;
+	qsort(t, (size_t)nt, sizeof *t, tag_cmp);
 
 	int pow2 = 1, log2 = 0;
-	while (pow2 * 2 <= NT) {
+	while (pow2 * 2 <= nt) {
 		pow2 *= 2;
 		log2++;
 	}
 	buf_u32(out, 0x00010000);
-	buf_u16(out, NT);
+	buf_u16(out, (uint16_t)nt);
 	buf_u16(out, (uint16_t)(pow2 * 16));
 	buf_u16(out, (uint16_t)log2);
-	buf_u16(out, (uint16_t)(NT * 16 - pow2 * 16));
-	size_t off = 12 + 16 * NT, head_at = 0;
-	for (int i = 0; i < NT; i++) {
+	buf_u16(out, (uint16_t)(nt * 16 - pow2 * 16));
+	size_t off = 12 + 16 * (size_t)nt, head_at = 0;
+	for (int i = 0; i < nt; i++) {
 		buf_bytes(out, t[i].tag, 4);
 		buf_u32(out, sfnt_checksum(t[i].data.data, t[i].data.len));
 		buf_u32(out, (uint32_t)off);
@@ -73,7 +86,7 @@ void sfnt_build(const Font *f, Buf *out)
 			head_at = off;
 		off += (t[i].data.len + 3) & ~(size_t)3;
 	}
-	for (int i = 0; i < NT; i++) {
+	for (int i = 0; i < nt; i++) {
 		buf_bytes(out, t[i].data.data, t[i].data.len);
 		buf_pad4(out);
 		buf_free(&t[i].data);
