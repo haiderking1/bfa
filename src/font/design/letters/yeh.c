@@ -3,7 +3,23 @@
 #include "font/design/style.h"
 
 #define YEH_W 500.0
-#define YEH_HOOK 270.0
+#define HEAD_H 250.0   /* top of the isolated form's head */
+#define LIP 110.0      /* where the bowl's tail ends on the left */
+
+#define CURL_R 75.0
+#define FOOT_R 110.0
+
+/* from the right wall at height y, a smooth fall into a flat bottom that
+   runs left and turns up into the tail */
+static void sweep(Pen *p, double x, double y)
+{
+	double w = p->bw, bot = DESC + HS;
+	pen_cubic(p, x, y - 120, x - 60, bot, w * 0.45, bot);
+	pen_line(p, HS + FOOT_R, bot);
+	pen_arc(p, HS + FOOT_R, bot + FOOT_R, FOOT_R, FOOT_R, 270, 180);
+	pen_line(p, HS, LIP);
+	pen_stroke(p, CAP_FLAT, CAP_FLAT);
+}
 
 void body_yeh(Pen *p, Form f)
 {
@@ -12,23 +28,20 @@ void body_yeh(Pen *p, Form f)
 		return;
 	}
 	p->bw = YEH_W;
-	double w = p->bw;
+	double w = p->bw, x = w - HS;
 	if (f == FORM_FINA) {
-		RPATH(p, CAP_FLAT, CAP_FLAT,
-		      w, BY, 0,
-		      HS, BY, 110,
-		      HS, DESC + HS, BOWL_R,
-		      w - HS, DESC + HS, 90,
-		      w - HS, -150, 0);
+		pen_move(p, w, BY);
+		pen_line(p, x - 30, BY);
+		sweep(p, x - 30, BY);
 	} else {
-		/* a diagonal falls into the left wall of the bowl */
-		RPATH(p, CAP_FLAT, CAP_FLAT,
-		      w - HS - 20, YEH_HOOK, 0,
-		      HS, 10, 160,
-		      HS, DESC + HS, BOWL_R,
-		      w - HS, DESC + HS, 90,
-		      w - HS, -150, 0);
+		/* a head curling right before the fall */
+		double ht = HEAD_H - HS;
+		pen_move(p, w * 0.6, ht);
+		pen_line(p, x - CURL_R, ht);
+		pen_arc(p, x - CURL_R, ht - CURL_R, CURL_R, CURL_R, 90, 0);
+		pen_line(p, x, ht - CURL_R - 10);
+		sweep(p, x, ht - CURL_R - 10);
 	}
-	pen_anchor_below(p, w * 0.5, DESC - DOT_CLEAR);
-	pen_anchor_above(p, w * 0.7, YEH_HOOK + DOT_CLEAR - 30);
+	pen_anchor_below(p, w * 0.42, DESC - DOT_CLEAR);
+	pen_anchor_above(p, w * 0.62, HEAD_H + DOT_CLEAR);
 }
